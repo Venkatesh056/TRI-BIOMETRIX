@@ -1,0 +1,46 @@
+# Biometric Security System - Requirements
+
+# Web Framework
+Flask>=2.0.0
+
+# Configuration
+PyYAML>=6.0
+
+# Numerical Computing
+numpy>=1.21.0
+scikit-learn>=1.0.0
+
+# Image Processing
+opencv-python>=4.5.0
+Pillow>=9.0.0
+
+# Audio Processing
+librosa>=0.9.0
+soundfile>=0.11.0
+
+# Deep Learning (choose one or both)
+torch>=1.10.0
+# tensorflow>=2.8.0  # Optional, uncomment if needed
+
+# Speech Recognition
+openai-whisper>=20230314
+
+# Speaker Verification (optional, for ECAPA-TDNN)
+# speechbrain>=0.5.0  # Uncomment for advanced speaker embeddings
+
+# Hand/Gesture Detection
+mediapipe>=0.9.0
+
+# Text Matching
+rapidfuzz>=2.0.0
+
+# Database
+pymongo>=4.0.0  # For MongoDB (production)
+# SQLite is built-in to Python
+
+# Security & Encryption
+cryptography>=39.0.0
+bcrypt>=4.0.0
+
+# Utilities
+python-dotenv>=0.19.0

@@ -1,0 +1,166 @@
+# Biometric Security System Configuration
+
+app:
+  name: "Biometric Security System"
+  debug: true
+  secret_key: "change-this-in-production-use-secure-random-key"
+  host: "0.0.0.0"
+  port: 5000
+
+# Database Configuration
+database:
+  type: "sqlite"  # "sqlite" or "mongodb"
+  sqlite:
+    path: "data/biometric.db"
+  mongodb:
+    uri: "mongodb://localhost:27017"
+    database: "biometric_security"
+
+# Authentication Settings
+auth:
+  require_face: true
+  require_voice: true
+  require_gesture: true
+  check_passphrase: false  # Optional passphrase content verification
+  
+  # Similarity thresholds (0.0 - 1.0)
+  thresholds:
+    face: 0.6
+    speaker: 0.7
+    passphrase_fuzzy: 0.8
+  
+  # Adaptive thresholds - adjust per user based on enrollment quality
+  adaptive_thresholds:
+    enabled: true
+    min_face: 0.5
+    max_face: 0.8
+    min_speaker: 0.6
+    max_speaker: 0.85
+
+# Model Configuration
+models:
+  face:
+    detector: "haar"  # "haar" or "mtcnn"
+    embedding_size: 128
+    input_size: [160, 160]
+  
+  speaker:
+    type: "mfcc"  # "ecapa" or "mfcc"
+    sample_rate: 16000
+    n_mfcc: 13
+  
+  speech:
+    model: "tiny"  # "tiny", "base", "small"
+    language: "en"
+  
+  gesture:
+    enabled: true
+    required_gesture: "thumbs_up"
+
+# Enrollment Settings
+enrollment:
+  max_family_members: 10
+  face_samples: 6
+  voice_samples: 3
+  save_progress: true  # Save incomplete enrollments
+
+# Security Settings
+security:
+  encryption_enabled: true
+  log_all_attempts: true
+  
+  # Lockout settings
+  max_failed_attempts: 5
+  lockout_duration_minutes: 15
+  
+  # Liveness detection
+  liveness:
+    enabled: true
+    challenge_count: 1  # Number of challenges per auth
+    require_blink: false
+    require_motion: true
+  
+  # Anti-spoofing
+  anti_spoof:
+    check_photo_attack: true
+    check_replay_attack: true
+  
+  # After-hours monitoring
+  after_hours:
+    enabled: false
+    start_hour: 22  # 10 PM
+    end_hour: 6     # 6 AM
+    alert_on_access: true
+
+# Quality Requirements
+quality:
+  face:
+    min_brightness: 60
+    max_brightness: 200
+    min_sharpness: 20  # Lowered for laptop webcams
+    min_face_size_ratio: 0.08
+    max_face_size_ratio: 0.7
+  
+  audio:
+    min_duration: 0.5
+    max_duration: 15
+    min_volume: 0.01
+    min_snr: 10
+
+# Audio Processing
+audio:
+  sample_rate: 16000
+  channels: 1
+  format: "wav"
+  max_duration_seconds: 10
+  trim_silence: true
+  normalize: true
+
+# Alert System
+alerts:
+  enabled: true
+  admin_email: ""  # Set to receive alerts
+  
+  # Email configuration (optional)
+  email:
+    enabled: false
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    username: ""
+    password: ""
+    from_email: ""
+  
+  # Webhook configuration
+  webhooks: []
+  # Example webhook:
+  # - url: "https://your-server.com/webhook"
+  #   enabled: true
+  #   events: ["auth_success", "auth_failure", "new_enrollment"]
+  #   headers:
+  #     Authorization: "Bearer your-token"
+
+# API Configuration
+api:
+  enabled: true
+  require_key: false
+  rate_limit: 100  # requests per minute
+  
+  # API keys (if require_key is true)
+  keys: []
+  # - key: "your-api-key-here"
+  #   name: "Home Automation"
+  #   permissions: ["authenticate", "status"]
+
+# Logging
+logging:
+  level: "INFO"
+  file: "logs/security.log"
+  max_size_mb: 10
+  backup_count: 5
+
+# Dashboard Settings
+dashboard:
+  refresh_interval: 30  # seconds
+  show_confidence_scores: true
+  show_live_feed: true
+  max_recent_logs: 100

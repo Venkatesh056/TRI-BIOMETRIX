@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+{% block title %}Authenticate - Biometric Security{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card p-4">
+            <div class="text-center mb-4">
+                <i class="fas fa-fingerprint icon-large text-primary mb-3"></i>
+                <h2>Biometric Authentication</h2>
+                <p class="text-muted">Verify your identity using face, voice, and gesture</p>
+            </div>
+
+            <!-- Lockout Warning -->
+            <div id="lockoutWarning" class="alert alert-danger" style="display:none;">
+                <i class="fas fa-lock me-2"></i>
+                <span id="lockoutMessage">Account locked</span>
+            </div>
+
+            <!-- Step 0: User ID (Optional) -->
+            <div class="mb-4">
+                <label class="form-label"><i class="fas fa-user me-2"></i>User ID (optional)</label>
+                <input type="text" id="userId" class="form-control" placeholder="Enter your name or leave blank for auto-identify">
+            </div>
+
+            <!-- Liveness Challenge -->
+            <div id="livenessSection" class="card bg-warning bg-opacity-10 p-3 mb-4" style="display:none;">
+                <h5><i class="fas fa-shield-alt me-2"></i>Liveness Check</h5>
+                <div id="challengeInstruction" class="alert alert-info">
+                    <i id="challengeIcon" class="fas fa-eye me-2"></i>
+                    <span id="challengeText">Loading challenge...</span>
+                </div>
+                <button id="completeChallengeBtn" class="btn btn-warning">
+                    <i class="fas fa-check me-2"></i>I've completed the challenge
+                </button>
+            </div>
+
+            <!-- Step 1: Face + Gesture -->
+            <div class="card bg-light p-3 mb-4">
+                <h5><i class="fas fa-camera me-2"></i>Step 1: Face & Gesture Capture</h5>
+                
+                <!-- Quality Indicator -->
+                <div id="qualityIndicator" class="mb-2" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small>Image Quality:</small>
+                        <span id="qualityBadge" class="badge">Checking...</span>
+                    </div>
+                    <div class="progress" style="height: 5px;">
+                        <div id="qualityBar" class="progress-bar" style="width: 0%"></div>
+                    </div>
+                    <small id="qualityIssues" class="text-danger"></small>
+                </div>
+                
+                <div class="video-container mb-3 position-relative">
+                    <video id="video" autoplay playsinline></video>
+                    <canvas id="canvas" style="display:none;"></canvas>
+                    <!-- Face detection overlay -->
+                    <div id="faceOverlay" class="position-absolute" style="border: 3px solid transparent; display:none;"></div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6 mb-2">
+                        <select id="gestureSelect" class="form-select">
+                            <option value="thumbs_up">👍 Thumbs Up</option>
+                            <option value="peace">✌️ Peace Sign</option>
+                            <option value="open_palm">🖐️ Open Palm</option>
+                            <option value="fist">✊ Fist</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <button id="captureBtn" class="btn btn-primary w-100">
+                            <i class="fas fa-camera me-2"></i>Capture Face + Gesture
+                        </button>
+                    </div>
+                </div>
+                <div id="faceStatus" class="mt-2"></div>
+                <img id="capturedFace" class="mt-2" style="max-width:200px; border-radius:8px; display:none;">
+            </div>
+
+            <!-- Step 2: Voice -->
+            <div class="card bg-light p-3 mb-4">
+                <h5><i class="fas fa-microphone me-2"></i>Step 2: Voice Verification</h5>
+                <p class="text-muted">Speak your passphrase clearly</p>
+                
+                <!-- Volume Meter -->
+                <div class="mb-3">
+                    <small>Volume Level:</small>
+                    <div class="progress" style="height: 10px;">
+                        <div id="volumeMeter" class="progress-bar bg-success" style="width: 0%; transition: width 0.1s;"></div>
+                    </div>
+                </div>
+                
+                <div class="d-flex gap-2 mb-3">
+                    <button id="recordBtn" class="btn btn-danger flex-grow-1">
+                        <i class="fas fa-microphone me-2"></i>Start Recording
+                    </button>
+                    <button id="stopRecordBtn" class="btn btn-secondary" disabled>
+                        <i class="fas fa-stop me-2"></i>Stop
+                    </button>
+                </div>
+                <div id="voiceStatus" class="mt-2"></div>
+                <audio id="audioPlayback" controls class="w-100 mt-2" style="display:none;"></audio>
+            </div>
+
+            <!-- Authenticate Button -->
+            <button id="authenticateBtn" class="btn btn-success btn-lg w-100" disabled>
+                <i class="fas fa-unlock me-2"></i>Authenticate
+            </button>
+            
+            <!-- Attempts Warning -->
+            <div id="attemptsWarning" class="text-center mt-2" style="display:none;">
+                <small class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>
+                    <span id="attemptsText"></span>
+                </small>
+            </div>
+
+            <!-- Result -->
+            <div id="result" class="mt-4" style="display:none;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let video, canvas, ctx;
+let mediaRecorder, audioChunks = [];
+let audioContext, analyser, microphone;
+let capturedImageData = null;
+let capturedAudioData = null;
+let gestureDetected = false;
+let qualityCheckInterval = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+    video = document.getElementById('video');
+    canvas = document.getElementById('canvas');
+    ctx = canvas.getContext('2d');
+    
+    // Start camera
+    startCamera();
+    
+    // Event listeners
+    document.getElementById('captureBtn').addEventListener('click', captureFrame);
+    document.getElementById('recordBtn').addEventListener('click', startRecording);
+    document.getElementById('stopRecordBtn').addEventListener('click', stopRecording);
+    document.getElementById('authenticateBtn').addEventListener('click', authenticate);
+});
+
+async function startCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'user', width: 640, height: 480 } 
+        });
+        video.srcObject = stream;
+        
+        // Start quality checking
+        video.onloadedmetadata = () => {
+            document.getElementById('qualityIndicator').style.display = 'block';
+            qualityCheckInterval = setInterval(checkFaceQuality, 1000);
+        };
+    } catch (err) {
+        alert('Camera access denied: ' + err.message);
+    }
+}
+
+async function checkFaceQuality() {
+    if (!video.videoWidth) return;
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    const imageData = canvas.toDataURL('image/jpeg', 0.7);
+    
+    try {
+        const response = await fetch('/api/quality/face', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: imageData })
+        });
+        
+        const data = await response.json();
+        updateQualityUI(data);
+    } catch (err) {
+        console.error('Quality check failed:', err);
+    }
+}
+
+function updateQualityUI(data) {
+    const badge = document.getElementById('qualityBadge');
+    const bar = document.getElementById('qualityBar');
+    const issues = document.getElementById('qualityIssues');
+    const overlay = document.getElementById('faceOverlay');
+    
+    const score = data.score || 0;
+    bar.style.width = score + '%';
+    
+    if (score >= 80) {
+        badge.className = 'badge bg-success';
+        badge.textContent = 'Good';
+        bar.className = 'progress-bar bg-success';
+    } else if (score >= 50) {
+        badge.className = 'badge bg-warning';
+        badge.textContent = 'Fair';
+        bar.className = 'progress-bar bg-warning';
+    } else {
+        badge.className = 'badge bg-danger';
+        badge.textContent = 'Poor';
+        bar.className = 'progress-bar bg-danger';
+    }
+    
+    // Show issues
+    const allIssues = [...(data.issues || []), ...(data.warnings || [])];
+    issues.textContent = allIssues.join(' • ');
+    
+    // Show face bounding box
+    if (data.face_bbox) {
+        const bbox = data.face_bbox;
+        const videoRect = video.getBoundingClientRect();
+        const scaleX = videoRect.width / video.videoWidth;
+        const scaleY = videoRect.height / video.videoHeight;
+        
+        overlay.style.display = 'block';
+        overlay.style.left = (bbox.x * scaleX) + 'px';
+        overlay.style.top = (bbox.y * scaleY) + 'px';
+        overlay.style.width = (bbox.w * scaleX) + 'px';
+        overlay.style.height = (bbox.h * scaleY) + 'px';
+        overlay.style.borderColor = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+    } else {
+        overlay.style.display = 'none';
+    }
+}
+
+function captureFrame() {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    
+    capturedImageData = canvas.toDataURL('image/jpeg', 0.9);
+    gestureDetected = true;
+    
+    document.getElementById('capturedFace').src = capturedImageData;
+    document.getElementById('capturedFace').style.display = 'block';
+    document.getElementById('faceStatus').innerHTML = `
+        <span class="status-badge status-success">
+            <i class="fas fa-check me-1"></i>Face captured with ${document.getElementById('gestureSelect').value}
+        </span>`;
+    
+    checkReady();
+}
+
+async function startRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Setup volume meter
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        analyser.fftSize = 256;
+        updateVolumeMeter();
+        
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        audioChunks = [];
+        
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                capturedAudioData = reader.result;
+                document.getElementById('audioPlayback').src = URL.createObjectURL(blob);
+                document.getElementById('audioPlayback').style.display = 'block';
+                document.getElementById('voiceStatus').innerHTML = `
+                    <span class="status-badge status-success">
+                        <i class="fas fa-check me-1"></i>Voice recorded
+                    </span>`;
+                checkReady();
+            };
+            reader.readAsDataURL(blob);
+        };
+        
+        mediaRecorder.start();
+        document.getElementById('recordBtn').disabled = true;
+        document.getElementById('stopRecordBtn').disabled = false;
+        document.getElementById('voiceStatus').innerHTML = `
+            <span class="status-badge status-pending">
+                <i class="fas fa-circle text-danger me-1"></i>Recording...
+            </span>`;
+    } catch (err) {
+        alert('Microphone access denied: ' + err.message);
+    }
+}
+
+function updateVolumeMeter() {
+    if (!analyser) return;
+    
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(dataArray);
+    
+    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+    const level = Math.min(100, average * 1.5);
+    
+    document.getElementById('volumeMeter').style.width = level + '%';
+    
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        requestAnimationFrame(updateVolumeMeter);
+    }
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+    }
+    if (audioContext) {
+        audioContext.close();
+    }
+    document.getElementById('recordBtn').disabled = false;
+    document.getElementById('stopRecordBtn').disabled = true;
+    document.getElementById('volumeMeter').style.width = '0%';
+}
+
+function checkReady() {
+    const ready = capturedImageData && capturedAudioData;
+    document.getElementById('authenticateBtn').disabled = !ready;
+}
+
+async function authenticate() {
+    const btn = document.getElementById('authenticateBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Authenticating...';
+    
+    try {
+        const response = await fetch('/api/authenticate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: document.getElementById('userId').value,
+                face_image: capturedImageData,
+                voice_sample: capturedAudioData,
+                gesture_detected: gestureDetected,
+                gesture_type: document.getElementById('gestureSelect').value
+            })
+        });
+        
+        const data = await response.json();
+        const resultDiv = document.getElementById('result');
+        resultDiv.style.display = 'block';
+        
+        if (data.locked) {
+            document.getElementById('lockoutWarning').style.display = 'block';
+            document.getElementById('lockoutMessage').textContent = data.message;
+            resultDiv.innerHTML = '';
+        } else if (data.success) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <h4><i class="fas fa-unlock me-2"></i>Access Granted!</h4>
+                    <p>Welcome, <strong>${data.user_id}</strong></p>
+                    <hr>
+                    <div class="row">
+                        <div class="col-4 text-center">
+                            <div class="h4 mb-0 ${data.details.face.success ? 'text-success' : 'text-danger'}">
+                                ${data.details.face.score}%
+                            </div>
+                            <small>Face</small>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="h4 mb-0 ${data.details.voice.success ? 'text-success' : 'text-danger'}">
+                                ${data.details.voice.score}%
+                            </div>
+                            <small>Voice</small>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="h4 mb-0 ${data.details.gesture.success ? 'text-success' : 'text-danger'}">
+                                <i class="fas fa-${data.details.gesture.success ? 'check' : 'times'}"></i>
+                            </div>
+                            <small>Gesture</small>
+                        </div>
+                    </div>
+                </div>`;
+        } else {
+            // Show attempts remaining
+            if (data.details && data.details.attempts_remaining !== undefined) {
+                document.getElementById('attemptsWarning').style.display = 'block';
+                document.getElementById('attemptsText').textContent = 
+                    `${data.details.attempts_remaining} attempts remaining before lockout`;
+            }
+            
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <h4><i class="fas fa-lock me-2"></i>Access Denied</h4>
+                    <ul class="mb-0">${data.reasons.map(r => `<li>${r}</li>`).join('')}</ul>
+                    <hr>
+                    <div class="row">
+                        <div class="col-4 text-center">
+                            <div class="h5 mb-0">${data.details.face.score || 0}%</div>
+                            <small class="${data.details.face.success ? 'text-success' : 'text-danger'}">Face</small>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="h5 mb-0">${data.details.voice.score || 0}%</div>
+                            <small class="${data.details.voice.success ? 'text-success' : 'text-danger'}">Voice</small>
+                        </div>
+                        <div class="col-4 text-center">
+                            <i class="fas fa-${data.details.gesture.success ? 'check text-success' : 'times text-danger'}"></i>
+                            <br><small>Gesture</small>
+                        </div>
+                    </div>
+                </div>`;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+    
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-unlock me-2"></i>Authenticate';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard - Biometric Security{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 20px;
+    }
+    .stat-card.success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+    .stat-card.danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+    .stat-card.warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+    .stat-card .stat-value { font-size: 2.5rem; font-weight: 700; }
+    .chart-container { height: 200px; }
+    .log-item { border-left: 3px solid #e2e8f0; padding-left: 10px; margin-bottom: 8px; }
+    .log-item.success { border-color: #10b981; }
+    .log-item.failed { border-color: #ef4444; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2><i class="fas fa-tachometer-alt me-2"></i>Admin Dashboard</h2>
+                <p class="text-muted mb-0">Real-time monitoring and management</p>
+            </div>
+            <div>
+                <button class="btn btn-outline-primary me-2" onclick="refreshStats()">
+                    <i class="fas fa-sync-alt me-1"></i>Refresh
+                </button>
+                <span class="badge bg-success"><i class="fas fa-circle me-1"></i>System Online</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-value" id="totalAttempts">{{ stats.total_attempts }}</div>
+                    <div>Total Attempts</div>
+                </div>
+                <i class="fas fa-fingerprint fa-3x opacity-50"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="stat-card success">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-value" id="successCount">{{ stats.successful }}</div>
+                    <div>Successful</div>
+                </div>
+                <i class="fas fa-check-circle fa-3x opacity-50"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="stat-card danger">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-value" id="failedCount">{{ stats.failed }}</div>
+                    <div>Failed</div>
+                </div>
+                <i class="fas fa-times-circle fa-3x opacity-50"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="stat-card warning">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="stat-value" id="enrolledUsers">{{ users|length }}</div>
+                    <div>Enrolled Users</div>
+                </div>
+                <i class="fas fa-users fa-3x opacity-50"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Users Panel -->
+    <div class="col-lg-6 mb-4">
+        <div class="card p-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0"><i class="fas fa-users me-2"></i>Enrolled Users</h4>
+                <a href="/enrollment" class="btn btn-sm btn-primary">
+                    <i class="fas fa-user-plus me-1"></i>Add
+                </a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>User ID</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTable">
+                        {% for user in users %}
+                        <tr id="user-row-{{ user.user_id }}">
+                            <td>{{ user.name }}</td>
+                            <td><code>{{ user.user_id }}</code></td>
+                            <td>
+                                {% if user.user_id in lockouts %}
+                                <span class="badge bg-danger">Locked</span>
+                                {% elif user.enrollment_complete %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-warning">Incomplete</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user.user_id in lockouts %}
+                                <button class="btn btn-sm btn-warning me-1" onclick="unlockUser('{{ user.user_id }}')" title="Unlock">
+                                    <i class="fas fa-unlock"></i>
+                                </button>
+                                {% endif %}
+                                <button class="btn btn-sm btn-outline-primary me-1" onclick="editUser('{{ user.user_id }}')" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="deleteUser('{{ user.user_id }}')" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">No users enrolled</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="col-lg-6 mb-4">
+        <div class="card p-4 h-100">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0"><i class="fas fa-history me-2"></i>Recent Activity</h4>
+                <select id="logFilter" class="form-select form-select-sm" style="width:auto;" onchange="filterLogs()">
+                    <option value="all">All Events</option>
+                    <option value="authentication">Auth Only</option>
+                    <option value="enrollment">Enrollment Only</option>
+                </select>
+            </div>
+            <div id="activityLog" style="max-height: 350px; overflow-y: auto;">
+                {% for log in logs %}
+                <div class="log-item {{ 'success' if log.success else 'failed' }}">
+                    <div class="d-flex justify-content-between">
+                        <strong>
+                            {% if log.success %}
+                            <i class="fas fa-check-circle text-success me-1"></i>
+                            {% else %}
+                            <i class="fas fa-times-circle text-danger me-1"></i>
+                            {% endif %}
+                            {{ log.event_type|title }}
+                        </strong>
+                        <small class="text-muted">{{ log.timestamp }}</small>
+                    </div>
+                    <small>User: {{ log.user_id or 'Unknown' }}</small>
+                    {% if log.reason and log.reason != 'ok' %}
+                    <br><small class="text-danger">{{ log.reason }}</small>
+                    {% endif %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center">No activity yet</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Status & Config -->
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card p-4">
+            <h4><i class="fas fa-server me-2"></i>System Status</h4>
+            <div class="row mt-3">
+                <div class="col-6 mb-3">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-face-smile fa-2x text-primary me-3"></i>
+                        <div>
+                            <div class="fw-bold">Face Model</div>
+                            <small class="text-success"><i class="fas fa-check me-1"></i>Active</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 mb-3">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-microphone fa-2x text-primary me-3"></i>
+                        <div>
+                            <div class="fw-bold">Voice Model</div>
+                            <small class="text-success"><i class="fas fa-check me-1"></i>Active</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 mb-3">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-comment fa-2x text-primary me-3"></i>
+                        <div>
+                            <div class="fw-bold">Speech Model</div>
+                            <small class="text-success"><i class="fas fa-check me-1"></i>Active</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 mb-3">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-hand fa-2x text-primary me-3"></i>
+                        <div>
+                            <div class="fw-bold">Gesture Model</div>
+                            <small class="text-success"><i class="fas fa-check me-1"></i>Active</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-6 mb-4">
+        <div class="card p-4">
+            <h4><i class="fas fa-sliders-h me-2"></i>Quick Settings</h4>
+            <div class="mt-3">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="requireFace" checked>
+                    <label class="form-check-label" for="requireFace">Require Face Verification</label>
+                </div>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="requireVoice" checked>
+                    <label class="form-check-label" for="requireVoice">Require Voice Verification</label>
+                </div>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="requireGesture" checked>
+                    <label class="form-check-label" for="requireGesture">Require Gesture</label>
+                </div>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="livenessCheck">
+                    <label class="form-check-label" for="livenessCheck">Liveness Detection</label>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-6">
+                        <label class="form-label small">Face Threshold</label>
+                        <input type="range" class="form-range" min="0.3" max="0.9" step="0.05" value="0.6" id="faceThreshold">
+                        <small id="faceThresholdVal">0.6</small>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small">Voice Threshold</label>
+                        <input type="range" class="form-range" min="0.3" max="0.9" step="0.05" value="0.7" id="voiceThreshold">
+                        <small id="voiceThresholdVal">0.7</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editUserId">
+                <div class="mb-3">
+                    <label class="form-label">Name</label>
+                    <input type="text" class="form-control" id="editUserName">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Family Name</label>
+                    <input type="text" class="form-control" id="editUserFamily">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Gesture Preference</label>
+                    <select class="form-select" id="editUserGesture">
+                        <option value="thumbs_up">Thumbs Up</option>
+                        <option value="peace">Peace</option>
+                        <option value="open_palm">Open Palm</option>
+                    </select>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="editUserActive" checked>
+                    <label class="form-check-label" for="editUserActive">Active</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveUser()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh stats
+let refreshInterval = setInterval(refreshStats, 30000);
+
+async function refreshStats() {
+    try {
+        const response = await fetch('/api/stats');
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('totalAttempts').textContent = data.total_attempts;
+            document.getElementById('successCount').textContent = data.successful;
+            document.getElementById('failedCount').textContent = data.failed;
+            document.getElementById('enrolledUsers').textContent = data.enrolled_users;
+        }
+    } catch (err) {
+        console.error('Failed to refresh stats:', err);
+    }
+}
+
+async function deleteUser(userId) {
+    if (!confirm(`Delete user "${userId}"? This cannot be undone.`)) return;
+    
+    try {
+        const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById(`user-row-${userId}`).remove();
+            refreshStats();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function unlockUser(userId) {
+    try {
+        const response = await fetch(`/api/users/${userId}/unlock`, { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function editUser(userId) {
+    try {
+        const response = await fetch(`/api/users/${userId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            document.getElementById('editUserId').value = userId;
+            document.getElementById('editUserName').value = data.user.name || '';
+            document.getElementById('editUserFamily').value = data.user.family_name || '';
+            document.getElementById('editUserGesture').value = data.user.gesture_preference || 'thumbs_up';
+            document.getElementById('editUserActive').checked = data.user.is_active !== 0;
+            
+            new bootstrap.Modal(document.getElementById('editUserModal')).show();
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function saveUser() {
+    const userId = document.getElementById('editUserId').value;
+    
+    try {
+        const response = await fetch(`/api/users/${userId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: document.getElementById('editUserName').value,
+                family_name: document.getElementById('editUserFamily').value,
+                gesture_preference: document.getElementById('editUserGesture').value,
+                is_active: document.getElementById('editUserActive').checked ? 1 : 0
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editUserModal')).hide();
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+function filterLogs() {
+    // Would filter logs based on selection
+    // For now, just reload
+    location.reload();
+}
+
+// Threshold sliders
+document.getElementById('faceThreshold').addEventListener('input', function() {
+    document.getElementById('faceThresholdVal').textContent = this.value;
+});
+
+document.getElementById('voiceThreshold').addEventListener('input', function() {
+    document.getElementById('voiceThresholdVal').textContent = this.value;
+});
+</script>
+{% endblock %}

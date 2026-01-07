@@ -1,0 +1,523 @@
+{% extends "base.html" %}
+{% block title %}Enrollment - Biometric Security{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card p-4">
+            <div class="text-center mb-4">
+                <i class="fas fa-user-plus icon-large text-primary mb-3"></i>
+                <h2>Family Enrollment</h2>
+                <p class="text-muted">Register family members for biometric access</p>
+            </div>
+
+            <!-- Progress Steps -->
+            <div class="d-flex justify-content-center mb-4">
+                <div class="step-indicator" id="step1Ind"><span class="badge bg-primary rounded-pill px-3 py-2">1. Info</span></div>
+                <div class="mx-2">→</div>
+                <div class="step-indicator" id="step2Ind"><span class="badge bg-secondary rounded-pill px-3 py-2">2. Face</span></div>
+                <div class="mx-2">→</div>
+                <div class="step-indicator" id="step3Ind"><span class="badge bg-secondary rounded-pill px-3 py-2">3. Voice</span></div>
+            </div>
+
+            <!-- Step 1: Family Info -->
+            <div id="step1" class="enrollment-step">
+                <h4><i class="fas fa-users me-2"></i>Family Information</h4>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Family Name</label>
+                        <input type="text" id="familyName" class="form-control" placeholder="e.g., Kumar Family">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Member Name</label>
+                        <input type="text" id="memberName" class="form-control" placeholder="e.g., Lokesh">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Passphrase (what you'll say to authenticate)</label>
+                    <input type="text" id="passphrase" class="form-control" placeholder="e.g., Open the front door">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Preferred Gesture</label>
+                    <select id="gesturePreference" class="form-select">
+                        <option value="thumbs_up">👍 Thumbs Up</option>
+                        <option value="peace">✌️ Peace Sign</option>
+                        <option value="open_palm">🖐️ Open Palm</option>
+                    </select>
+                </div>
+                <button id="nextToFace" class="btn btn-primary">Next: Capture Face <i class="fas fa-arrow-right ms-2"></i></button>
+            </div>
+
+            <!-- Step 2: Face Capture -->
+            <div id="step2" class="enrollment-step" style="display:none;">
+                <h4><i class="fas fa-camera me-2"></i>Face Capture (6 images)</h4>
+                <p class="text-muted">Capture face images from different angles for better recognition.</p>
+                
+                <!-- Current pose instruction -->
+                <div id="poseInstruction" class="alert alert-primary text-center mb-3">
+                    <h5 class="mb-1"><i id="poseIcon" class="fas fa-user me-2"></i><span id="poseText">Look straight at the camera</span></h5>
+                    <small id="poseHint">Keep your face centered and well-lit</small>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="video-container mb-3 position-relative">
+                            <video id="video" autoplay playsinline></video>
+                            <canvas id="canvas" style="display:none;"></canvas>
+                            <!-- Direction overlay -->
+                            <div id="directionOverlay" class="position-absolute top-50 start-50 translate-middle" style="display:none;">
+                                <i class="fas fa-arrow-left fa-3x text-warning"></i>
+                            </div>
+                        </div>
+                        <button id="captureFaceBtn" class="btn btn-primary w-100 mb-2">
+                            <i class="fas fa-camera me-2"></i>Capture (<span id="faceCount">0</span>/6)
+                        </button>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label mb-0">Captured Images:</label>
+                            <button id="deleteAllFacesBtn" class="btn btn-sm btn-outline-danger" style="display:none;" onclick="deleteAllFaces()">
+                                <i class="fas fa-trash me-1"></i>Delete All
+                            </button>
+                        </div>
+                        <div id="faceGrid" class="capture-grid"></div>
+                        
+                        <!-- Pose checklist -->
+                        <div class="mt-3">
+                            <small class="text-muted">Poses captured:</small>
+                            <div id="poseChecklist" class="mt-1">
+                                <span id="pose0" class="badge bg-secondary me-1">😐 Straight 1</span>
+                                <span id="pose1" class="badge bg-secondary me-1">😐 Straight 2</span>
+                                <span id="pose2" class="badge bg-secondary me-1">👈 Left</span>
+                                <span id="pose3" class="badge bg-secondary me-1">👉 Right</span>
+                                <span id="pose4" class="badge bg-secondary me-1">👆 Up</span>
+                                <span id="pose5" class="badge bg-secondary me-1">👇 Down</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button id="backToInfo" class="btn btn-secondary me-2"><i class="fas fa-arrow-left me-1"></i>Back</button>
+                    <button id="nextToVoice" class="btn btn-primary" disabled>Next: Record Voice <i class="fas fa-arrow-right ms-2"></i></button>
+                </div>
+            </div>
+
+            <!-- Step 3: Voice Capture -->
+            <div id="step3" class="enrollment-step" style="display:none;">
+                <h4><i class="fas fa-microphone me-2"></i>Voice Capture (3 samples)</h4>
+                <p class="text-muted">Record yourself saying the passphrase 3 times.</p>
+                <div class="alert alert-info">
+                    <strong>Your passphrase:</strong> "<span id="displayPassphrase"></span>"
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <button id="recordVoiceBtn" class="btn btn-danger w-100 mb-2">
+                            <i class="fas fa-microphone me-2"></i>Start Recording (<span id="voiceCount">0</span>/3)
+                        </button>
+                        <button id="stopVoiceBtn" class="btn btn-secondary w-100 mb-2" disabled>
+                            <i class="fas fa-stop me-2"></i>Stop Recording
+                        </button>
+                        <button id="verifyAudioBtn" class="btn btn-info w-100" style="display:none;">
+                            <i class="fas fa-check-double me-2"></i>Verify Last Recording
+                        </button>
+                        <div id="transcriptionResult" class="mt-2"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label mb-0">Recorded Samples:</label>
+                            <button id="deleteAllVoicesBtn" class="btn btn-sm btn-outline-danger" style="display:none;" onclick="deleteAllVoices()">
+                                <i class="fas fa-trash me-1"></i>Delete All
+                            </button>
+                        </div>
+                        <div id="voiceList"></div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button id="backToFace" class="btn btn-secondary me-2"><i class="fas fa-arrow-left me-1"></i>Back</button>
+                    <button id="enrollBtn" class="btn btn-success" disabled>
+                        <i class="fas fa-check me-2"></i>Complete Enrollment
+                    </button>
+                </div>
+            </div>
+
+            <!-- Result -->
+            <div id="enrollResult" class="mt-4" style="display:none;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+let video, canvas, ctx;
+let faceImages = [];
+let voiceSamples = [];
+let mediaRecorder, audioChunks = [];
+
+// Face pose instructions
+const facePoses = [
+    { name: 'Straight 1', icon: 'fa-user', hint: 'Look directly at the camera', emoji: '😐', arrow: null },
+    { name: 'Straight 2', icon: 'fa-user', hint: 'Slight smile, still looking straight', emoji: '😐', arrow: null },
+    { name: 'Left', icon: 'fa-arrow-left', hint: 'Turn your head slightly to YOUR LEFT', emoji: '👈', arrow: 'left' },
+    { name: 'Right', icon: 'fa-arrow-right', hint: 'Turn your head slightly to YOUR RIGHT', emoji: '👉', arrow: 'right' },
+    { name: 'Up', icon: 'fa-arrow-up', hint: 'Tilt your head slightly UP', emoji: '👆', arrow: 'up' },
+    { name: 'Down', icon: 'fa-arrow-down', hint: 'Tilt your head slightly DOWN', emoji: '👇', arrow: 'down' }
+];
+
+document.addEventListener('DOMContentLoaded', () => {
+    video = document.getElementById('video');
+    canvas = document.getElementById('canvas');
+    ctx = canvas.getContext('2d');
+    
+    // Navigation
+    document.getElementById('nextToFace').addEventListener('click', () => {
+        if (!document.getElementById('memberName').value) {
+            alert('Please enter member name');
+            return;
+        }
+        showStep(2);
+        startCamera();
+    });
+    document.getElementById('backToInfo').addEventListener('click', () => showStep(1));
+    document.getElementById('nextToVoice').addEventListener('click', () => {
+        document.getElementById('displayPassphrase').textContent = document.getElementById('passphrase').value || '(no passphrase set)';
+        showStep(3);
+    });
+    document.getElementById('backToFace').addEventListener('click', () => showStep(2));
+    
+    // Face capture
+    document.getElementById('captureFaceBtn').addEventListener('click', captureFace);
+    
+    // Voice recording
+    document.getElementById('recordVoiceBtn').addEventListener('click', startVoiceRecording);
+    document.getElementById('stopVoiceBtn').addEventListener('click', stopVoiceRecording);
+    document.getElementById('verifyAudioBtn').addEventListener('click', verifyLastAudio);
+    
+    // Enroll
+    document.getElementById('enrollBtn').addEventListener('click', submitEnrollment);
+});
+
+function showStep(step) {
+    document.querySelectorAll('.enrollment-step').forEach(el => el.style.display = 'none');
+    document.getElementById('step' + step).style.display = 'block';
+    
+    // Update indicators
+    for (let i = 1; i <= 3; i++) {
+        const badge = document.querySelector(`#step${i}Ind .badge`);
+        badge.className = i <= step ? 'badge bg-primary rounded-pill px-3 py-2' : 'badge bg-secondary rounded-pill px-3 py-2';
+    }
+}
+
+function startCamera() {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 } })
+        .then(stream => { video.srcObject = stream; })
+        .catch(err => alert('Camera error: ' + err.message));
+}
+
+function captureFace() {
+    if (faceImages.length >= 6) return;
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    
+    const imageData = canvas.toDataURL('image/jpeg', 0.9);
+    const poseIndex = faceImages.length;
+    faceImages.push(imageData);
+    
+    // Display thumbnail with pose label
+    const div = document.createElement('div');
+    div.className = 'position-relative d-inline-block';
+    div.id = `face-img-${poseIndex}`;
+    div.innerHTML = `
+        <img src="${imageData}" style="width:100%; border-radius:8px; border:2px solid #10b981;">
+        <span class="position-absolute bottom-0 start-0 badge bg-dark" style="font-size:0.6rem;">${facePoses[poseIndex].emoji}</span>
+        <button class="btn btn-sm btn-danger position-absolute top-0 end-0 p-0" style="width:20px;height:20px;font-size:0.6rem;" onclick="deleteFaceImage(${poseIndex})">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+    document.getElementById('faceGrid').appendChild(div);
+    
+    // Update pose checklist
+    document.getElementById(`pose${poseIndex}`).className = 'badge bg-success me-1';
+    
+    document.getElementById('faceCount').textContent = faceImages.length;
+    document.getElementById('deleteAllFacesBtn').style.display = 'inline-block';
+    
+    // Update instruction for next pose
+    updatePoseInstruction();
+    
+    if (faceImages.length >= 6) {
+        document.getElementById('nextToVoice').disabled = false;
+        document.getElementById('captureFaceBtn').disabled = true;
+        document.getElementById('poseInstruction').className = 'alert alert-success text-center mb-3';
+        document.getElementById('poseText').textContent = 'All poses captured!';
+        document.getElementById('poseHint').textContent = 'You can proceed to voice recording';
+        document.getElementById('poseIcon').className = 'fas fa-check-circle me-2';
+    }
+}
+
+function updatePoseInstruction() {
+    const nextPose = faceImages.length;
+    if (nextPose >= 6) return;
+    
+    const pose = facePoses[nextPose];
+    document.getElementById('poseText').textContent = pose.name + ' - ' + pose.hint;
+    document.getElementById('poseIcon').className = `fas ${pose.icon} me-2`;
+    document.getElementById('poseHint').textContent = `Pose ${nextPose + 1} of 6`;
+    
+    // Show direction arrow overlay
+    const overlay = document.getElementById('directionOverlay');
+    if (pose.arrow) {
+        const arrowMap = {
+            'left': 'fa-arrow-left',
+            'right': 'fa-arrow-right', 
+            'up': 'fa-arrow-up',
+            'down': 'fa-arrow-down'
+        };
+        overlay.innerHTML = `<i class="fas ${arrowMap[pose.arrow]} fa-3x text-warning" style="opacity:0.7;"></i>`;
+        overlay.style.display = 'block';
+    } else {
+        overlay.style.display = 'none';
+    }
+}
+
+function deleteFaceImage(index) {
+    faceImages.splice(index, 1);
+    rebuildFaceGrid();
+}
+
+function deleteAllFaces() {
+    if (!confirm('Delete all face images?')) return;
+    faceImages = [];
+    rebuildFaceGrid();
+}
+
+function rebuildFaceGrid() {
+    const grid = document.getElementById('faceGrid');
+    grid.innerHTML = '';
+    
+    // Reset all pose badges
+    for (let i = 0; i < 6; i++) {
+        document.getElementById(`pose${i}`).className = 'badge bg-secondary me-1';
+    }
+    
+    faceImages.forEach((imageData, i) => {
+        const div = document.createElement('div');
+        div.className = 'position-relative d-inline-block';
+        div.id = `face-img-${i}`;
+        div.innerHTML = `
+            <img src="${imageData}" style="width:100%; border-radius:8px; border:2px solid #10b981;">
+            <span class="position-absolute bottom-0 start-0 badge bg-dark" style="font-size:0.6rem;">${facePoses[i].emoji}</span>
+            <button class="btn btn-sm btn-danger position-absolute top-0 end-0 p-0" style="width:20px;height:20px;font-size:0.6rem;" onclick="deleteFaceImage(${i})">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+        grid.appendChild(div);
+        document.getElementById(`pose${i}`).className = 'badge bg-success me-1';
+    });
+    
+    document.getElementById('faceCount').textContent = faceImages.length;
+    document.getElementById('captureFaceBtn').disabled = faceImages.length >= 6;
+    document.getElementById('nextToVoice').disabled = faceImages.length < 6;
+    document.getElementById('deleteAllFacesBtn').style.display = faceImages.length > 0 ? 'inline-block' : 'none';
+    
+    // Reset instruction
+    document.getElementById('poseInstruction').className = 'alert alert-primary text-center mb-3';
+    updatePoseInstruction();
+}
+
+async function startVoiceRecording() {
+    if (voiceSamples.length >= 3) return;
+    
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        audioChunks = [];
+        
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                voiceSamples.push(reader.result);
+                
+                // Display audio item with delete button
+                const sampleIndex = voiceSamples.length;
+                const div = document.createElement('div');
+                div.className = 'audio-item d-flex justify-content-between align-items-center';
+                div.id = `voice-sample-${sampleIndex}`;
+                div.innerHTML = `
+                    <span><i class="fas fa-check-circle text-success me-2"></i>Sample ${sampleIndex}</span>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteVoiceSample(${sampleIndex})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                `;
+                document.getElementById('voiceList').appendChild(div);
+                
+                document.getElementById('voiceCount').textContent = voiceSamples.length;
+                document.getElementById('deleteAllVoicesBtn').style.display = 'inline-block';
+                
+                if (voiceSamples.length >= 3) {
+                    document.getElementById('enrollBtn').disabled = false;
+                    document.getElementById('recordVoiceBtn').disabled = true;
+                }
+            };
+            reader.readAsDataURL(blob);
+        };
+        
+        mediaRecorder.start();
+        document.getElementById('recordVoiceBtn').disabled = true;
+        document.getElementById('stopVoiceBtn').disabled = false;
+    } catch (err) {
+        alert('Microphone error: ' + err.message);
+    }
+}
+
+function stopVoiceRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+    }
+    document.getElementById('recordVoiceBtn').disabled = voiceSamples.length >= 3;
+    document.getElementById('stopVoiceBtn').disabled = true;
+    
+    // Show verify button if we have samples
+    if (voiceSamples.length > 0) {
+        document.getElementById('verifyAudioBtn').style.display = 'block';
+    }
+}
+
+async function verifyLastAudio() {
+    if (voiceSamples.length === 0) return;
+    
+    const btn = document.getElementById('verifyAudioBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Transcribing...';
+    
+    try {
+        const response = await fetch('/api/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio: voiceSamples[voiceSamples.length - 1] })
+        });
+        
+        const data = await response.json();
+        const resultDiv = document.getElementById('transcriptionResult');
+        
+        if (data.success && data.text) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success py-2">
+                    <small><strong>System heard:</strong> "${data.text}"</small>
+                </div>`;
+        } else {
+            resultDiv.innerHTML = `
+                <div class="alert alert-warning py-2">
+                    <small>Could not transcribe audio. Try speaking more clearly.</small>
+                </div>`;
+        }
+    } catch (err) {
+        document.getElementById('transcriptionResult').innerHTML = `
+            <div class="alert alert-danger py-2">
+                <small>Transcription error: ${err.message}</small>
+            </div>`;
+    }
+    
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-check-double me-2"></i>Verify Last Recording';
+}
+
+function deleteVoiceSample(index) {
+    // Remove from array (index is 1-based)
+    voiceSamples.splice(index - 1, 1);
+    
+    // Rebuild the voice list UI
+    rebuildVoiceList();
+}
+
+function deleteAllVoices() {
+    if (!confirm('Delete all voice recordings?')) return;
+    
+    voiceSamples = [];
+    rebuildVoiceList();
+}
+
+function rebuildVoiceList() {
+    const voiceList = document.getElementById('voiceList');
+    voiceList.innerHTML = '';
+    
+    voiceSamples.forEach((sample, i) => {
+        const sampleIndex = i + 1;
+        const div = document.createElement('div');
+        div.className = 'audio-item d-flex justify-content-between align-items-center';
+        div.id = `voice-sample-${sampleIndex}`;
+        div.innerHTML = `
+            <span><i class="fas fa-check-circle text-success me-2"></i>Sample ${sampleIndex}</span>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteVoiceSample(${sampleIndex})">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+        voiceList.appendChild(div);
+    });
+    
+    // Update UI state
+    document.getElementById('voiceCount').textContent = voiceSamples.length;
+    document.getElementById('recordVoiceBtn').disabled = voiceSamples.length >= 3;
+    document.getElementById('enrollBtn').disabled = voiceSamples.length < 3;
+    document.getElementById('deleteAllVoicesBtn').style.display = voiceSamples.length > 0 ? 'inline-block' : 'none';
+    document.getElementById('verifyAudioBtn').style.display = voiceSamples.length > 0 ? 'block' : 'none';
+}
+
+async function submitEnrollment() {
+    const btn = document.getElementById('enrollBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Enrolling...';
+    
+    const memberName = document.getElementById('memberName').value;
+    const userId = memberName.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now().toString(36);
+    
+    try {
+        const response = await fetch('/api/enroll', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                name: memberName,
+                family_name: document.getElementById('familyName').value,
+                passphrase: document.getElementById('passphrase').value,
+                gesture_preference: document.getElementById('gesturePreference').value,
+                face_images: faceImages,
+                voice_samples: voiceSamples
+            })
+        });
+        
+        const data = await response.json();
+        const resultDiv = document.getElementById('enrollResult');
+        resultDiv.style.display = 'block';
+        
+        if (data.success) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <h4><i class="fas fa-check-circle me-2"></i>Enrollment Successful!</h4>
+                    <p>${data.message}</p>
+                    <p>User ID: <strong>${userId}</strong></p>
+                    <a href="/" class="btn btn-primary mt-2">Go to Authentication</a>
+                </div>`;
+        } else {
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <h4><i class="fas fa-times-circle me-2"></i>Enrollment Failed</h4>
+                    <p>${data.error}</p>
+                </div>`;
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check me-2"></i>Complete Enrollment';
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-check me-2"></i>Complete Enrollment';
+    }
+}
+</script>
+{% endblock %}
