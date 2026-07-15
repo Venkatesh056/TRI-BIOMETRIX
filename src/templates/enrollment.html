@@ -33,10 +33,38 @@
                         <input type="text" id="memberName" class="form-control" placeholder="e.g., Lokesh">
                     </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Passphrase (what you'll say to authenticate)</label>
-                    <input type="text" id="passphrase" class="form-control" placeholder="e.g., Open the front door">
+                
+                <!-- Passphrase Section with Voice Verification -->
+                <div class="card bg-light p-3 mb-3">
+                    <h5><i class="fas fa-key me-2"></i>Set Your Passphrase</h5>
+                    <p class="text-muted small">Type your passphrase, then record yourself saying it to verify they match.</p>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Type Passphrase</label>
+                        <input type="text" id="passphrase" class="form-control" placeholder="e.g., Open the front door">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Speak Passphrase to Verify</label>
+                        <div class="d-flex gap-2">
+                            <button id="verifyPassphraseBtn" class="btn btn-outline-primary flex-grow-1" onclick="recordPassphraseVerification()">
+                                <i class="fas fa-microphone me-2"></i>Record & Verify
+                            </button>
+                            <button id="stopPassphraseBtn" class="btn btn-secondary" onclick="stopPassphraseVerification()" disabled>
+                                <i class="fas fa-stop"></i>
+                            </button>
+                        </div>
+                        <div id="passphraseVerifyStatus" class="mt-2"></div>
+                    </div>
+                    
+                    <div id="passphraseMatchResult" style="display:none;">
+                        <div class="alert alert-success py-2 mb-0">
+                            <i class="fas fa-check-circle me-2"></i>
+                            <strong>Passphrase verified!</strong> Voice matches typed text.
+                        </div>
+                    </div>
                 </div>
+                
                 <div class="mb-3">
                     <label class="form-label">Preferred Gesture</label>
                     <select id="gesturePreference" class="form-select">
@@ -61,12 +89,33 @@
                 
                 <div class="row">
                     <div class="col-md-6">
-                        <div class="video-container mb-3 position-relative">
+                        <div class="video-container mb-3 position-relative" style="overflow:visible;">
                             <video id="video" autoplay playsinline></video>
                             <canvas id="canvas" style="display:none;"></canvas>
-                            <!-- Direction overlay -->
-                            <div id="directionOverlay" class="position-absolute top-50 start-50 translate-middle" style="display:none;">
-                                <i class="fas fa-arrow-left fa-3x text-warning"></i>
+                            
+                            <!-- Face position guide overlay - stays centered -->
+                            <div id="faceGuide" class="position-absolute" style="
+                                border: 3px dashed #10b981;
+                                border-radius: 50%;
+                                width: 200px;
+                                height: 250px;
+                                top: 50%;
+                                left: 50%;
+                                transform: translate(-50%, -50%);
+                                pointer-events: none;
+                                transition: border-color 0.3s ease;
+                            ">
+                                <div id="guideLabel" class="position-absolute text-center w-100" style="bottom: -30px; color: #10b981; font-weight: bold;">
+                                    Position face here
+                                </div>
+                            </div>
+                            
+                            <!-- Direction instruction text overlay -->
+                            <div id="directionText" class="position-absolute text-center w-100" style="top: 10px; left: 0; pointer-events: none;">
+                                <span class="badge bg-primary px-3 py-2" style="font-size: 1rem;">
+                                    <i id="directionIcon" class="fas fa-user me-2"></i>
+                                    <span id="directionLabel">Look Straight</span>
+                                </span>
                             </div>
                         </div>
                         <button id="captureFaceBtn" class="btn btn-primary w-100 mb-2">
@@ -105,10 +154,20 @@
             <!-- Step 3: Voice Capture -->
             <div id="step3" class="enrollment-step" style="display:none;">
                 <h4><i class="fas fa-microphone me-2"></i>Voice Capture (3 samples)</h4>
-                <p class="text-muted">Record yourself saying the passphrase 3 times.</p>
+                <p class="text-muted">Record yourself saying the passphrase 3 times. Each recording will be verified.</p>
+                
                 <div class="alert alert-info">
                     <strong>Your passphrase:</strong> "<span id="displayPassphrase"></span>"
+                    <br><small class="text-muted">Speak this phrase clearly in any language. The system will verify it matches.</small>
                 </div>
+                
+                <!-- Passphrase verification status -->
+                <div id="passphraseStatus" class="mb-3" style="display:none;">
+                    <div class="progress" style="height: 25px;">
+                        <div id="verifyProgress" class="progress-bar" role="progressbar" style="width: 0%;">Verified: 0/3</div>
+                    </div>
+                </div>
+                
                 <div class="row">
                     <div class="col-md-6">
                         <button id="recordVoiceBtn" class="btn btn-danger w-100 mb-2">
@@ -117,14 +176,17 @@
                         <button id="stopVoiceBtn" class="btn btn-secondary w-100 mb-2" disabled>
                             <i class="fas fa-stop me-2"></i>Stop Recording
                         </button>
-                        <button id="verifyAudioBtn" class="btn btn-info w-100" style="display:none;">
-                            <i class="fas fa-check-double me-2"></i>Verify Last Recording
-                        </button>
+                        <div id="recordingStatus" class="text-center mb-2" style="display:none;">
+                            <i class="fas fa-circle text-danger fa-beat"></i> Recording...
+                        </div>
+                        <div id="verifyingStatus" class="text-center mb-2" style="display:none;">
+                            <i class="fas fa-spinner fa-spin"></i> Verifying passphrase...
+                        </div>
                         <div id="transcriptionResult" class="mt-2"></div>
                     </div>
                     <div class="col-md-6">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <label class="form-label mb-0">Recorded Samples:</label>
+                            <label class="form-label mb-0">Verified Samples:</label>
                             <button id="deleteAllVoicesBtn" class="btn btn-sm btn-outline-danger" style="display:none;" onclick="deleteAllVoices()">
                                 <i class="fas fa-trash me-1"></i>Delete All
                             </button>
@@ -154,6 +216,9 @@ let video, canvas, ctx;
 let faceImages = [];
 let voiceSamples = [];
 let mediaRecorder, audioChunks = [];
+let passphraseVerified = false;
+let passphraseRecorder = null;
+let passphraseChunks = [];
 
 // Face pose instructions
 const facePoses = [
@@ -192,8 +257,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Voice recording
     document.getElementById('recordVoiceBtn').addEventListener('click', startVoiceRecording);
     document.getElementById('stopVoiceBtn').addEventListener('click', stopVoiceRecording);
-    document.getElementById('verifyAudioBtn').addEventListener('click', verifyLastAudio);
-    
     // Enroll
     document.getElementById('enrollBtn').addEventListener('click', submitEnrollment);
 });
@@ -267,19 +330,40 @@ function updatePoseInstruction() {
     document.getElementById('poseIcon').className = `fas ${pose.icon} me-2`;
     document.getElementById('poseHint').textContent = `Pose ${nextPose + 1} of 6`;
     
-    // Show direction arrow overlay
-    const overlay = document.getElementById('directionOverlay');
+    // Update face guide - stays centered, just change color
+    const guide = document.getElementById('faceGuide');
+    const guideLabel = document.getElementById('guideLabel');
+    const directionLabel = document.getElementById('directionLabel');
+    const directionIcon = document.getElementById('directionIcon');
+    
+    // Guide always stays centered
+    guide.style.top = '50%';
+    guide.style.left = '50%';
+    guide.style.transform = 'translate(-50%, -50%)';
+    
     if (pose.arrow) {
-        const arrowMap = {
-            'left': 'fa-arrow-left',
-            'right': 'fa-arrow-right', 
-            'up': 'fa-arrow-up',
-            'down': 'fa-arrow-down'
+        // Directional pose - show instruction at top
+        guide.style.borderColor = '#10b981';  // Green when ready
+        guideLabel.textContent = 'Keep face centered';
+        guideLabel.style.color = '#10b981';
+        
+        // Update direction badge
+        const directionMap = {
+            'left': { icon: 'fa-arrow-left', label: 'Turn LEFT' },
+            'right': { icon: 'fa-arrow-right', label: 'Turn RIGHT' },
+            'up': { icon: 'fa-arrow-up', label: 'Look UP' },
+            'down': { icon: 'fa-arrow-down', label: 'Look DOWN' }
         };
-        overlay.innerHTML = `<i class="fas ${arrowMap[pose.arrow]} fa-3x text-warning" style="opacity:0.7;"></i>`;
-        overlay.style.display = 'block';
+        const config = directionMap[pose.arrow];
+        directionIcon.className = `fas ${config.icon} me-2`;
+        directionLabel.textContent = config.label;
     } else {
-        overlay.style.display = 'none';
+        // Straight pose
+        guide.style.borderColor = '#10b981';
+        guideLabel.textContent = 'Position face here';
+        guideLabel.style.color = '#10b981';
+        directionIcon.className = 'fas fa-user me-2';
+        directionLabel.textContent = 'Look Straight';
     }
 }
 
@@ -337,31 +421,71 @@ async function startVoiceRecording() {
         audioChunks = [];
         
         mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
             const blob = new Blob(audioChunks, { type: 'audio/webm' });
             const reader = new FileReader();
-            reader.onloadend = () => {
-                voiceSamples.push(reader.result);
+            reader.onloadend = async () => {
+                const audioData = reader.result;
                 
-                // Display audio item with delete button
-                const sampleIndex = voiceSamples.length;
-                const div = document.createElement('div');
-                div.className = 'audio-item d-flex justify-content-between align-items-center';
-                div.id = `voice-sample-${sampleIndex}`;
-                div.innerHTML = `
-                    <span><i class="fas fa-check-circle text-success me-2"></i>Sample ${sampleIndex}</span>
-                    <button class="btn btn-sm btn-outline-danger" onclick="deleteVoiceSample(${sampleIndex})">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                `;
-                document.getElementById('voiceList').appendChild(div);
+                // Show verifying status
+                document.getElementById('recordingStatus').style.display = 'none';
+                document.getElementById('verifyingStatus').style.display = 'block';
                 
-                document.getElementById('voiceCount').textContent = voiceSamples.length;
-                document.getElementById('deleteAllVoicesBtn').style.display = 'inline-block';
+                // Verify passphrase match
+                const passphrase = document.getElementById('passphrase').value;
+                const verified = await verifyPassphraseMatch(audioData, passphrase);
                 
-                if (voiceSamples.length >= 3) {
-                    document.getElementById('enrollBtn').disabled = false;
-                    document.getElementById('recordVoiceBtn').disabled = true;
+                document.getElementById('verifyingStatus').style.display = 'none';
+                
+                if (verified.success && verified.matched) {
+                    // Passphrase matched - accept the sample
+                    voiceSamples.push(audioData);
+                    
+                    const sampleIndex = voiceSamples.length;
+                    const div = document.createElement('div');
+                    div.className = 'audio-item d-flex justify-content-between align-items-center';
+                    div.id = `voice-sample-${sampleIndex}`;
+                    div.innerHTML = `
+                        <span>
+                            <i class="fas fa-check-circle text-success me-2"></i>
+                            Sample ${sampleIndex} 
+                            <span class="badge bg-success ms-1">${verified.similarity}% match</span>
+                        </span>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteVoiceSample(${sampleIndex})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    `;
+                    document.getElementById('voiceList').appendChild(div);
+                    
+                    document.getElementById('voiceCount').textContent = voiceSamples.length;
+                    document.getElementById('deleteAllVoicesBtn').style.display = 'inline-block';
+                    
+                    // Show success message
+                    document.getElementById('transcriptionResult').innerHTML = `
+                        <div class="alert alert-success py-2">
+                            <small><i class="fas fa-check me-1"></i><strong>Verified!</strong> "${verified.transcribed}"</small>
+                            <br><small class="text-muted">Similarity: ${verified.similarity}%</small>
+                        </div>`;
+                    
+                    // Update progress bar
+                    updateVerifyProgress();
+                    
+                    if (voiceSamples.length >= 3) {
+                        document.getElementById('enrollBtn').disabled = false;
+                        document.getElementById('recordVoiceBtn').disabled = true;
+                    }
+                } else {
+                    // Passphrase didn't match - reject the sample
+                    const errorMsg = verified.transcribed 
+                        ? `Heard: "${verified.transcribed}" (${verified.similarity}% match)` 
+                        : 'Could not understand the audio';
+                    
+                    document.getElementById('transcriptionResult').innerHTML = `
+                        <div class="alert alert-warning py-2">
+                            <small><i class="fas fa-exclamation-triangle me-1"></i><strong>Passphrase mismatch!</strong></small>
+                            <br><small>${errorMsg}</small>
+                            <br><small class="text-muted">Please try again and speak the passphrase clearly.</small>
+                        </div>`;
                 }
             };
             reader.readAsDataURL(blob);
@@ -370,9 +494,40 @@ async function startVoiceRecording() {
         mediaRecorder.start();
         document.getElementById('recordVoiceBtn').disabled = true;
         document.getElementById('stopVoiceBtn').disabled = false;
+        document.getElementById('recordingStatus').style.display = 'block';
+        document.getElementById('passphraseStatus').style.display = 'block';
+        document.getElementById('transcriptionResult').innerHTML = '';
     } catch (err) {
         alert('Microphone error: ' + err.message);
     }
+}
+
+async function verifyPassphraseMatch(audioData, expectedText) {
+    try {
+        const response = await fetch('/api/verify_passphrase', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                audio: audioData, 
+                expected_text: expectedText,
+                threshold: 0.3  // 30% similarity threshold - very lenient for multi-language
+            })
+        });
+        return await response.json();
+    } catch (err) {
+        console.error('Verification error:', err);
+        return { success: false, matched: false, error: err.message };
+    }
+}
+
+function updateVerifyProgress() {
+    const progress = (voiceSamples.length / 3) * 100;
+    const progressBar = document.getElementById('verifyProgress');
+    progressBar.style.width = progress + '%';
+    progressBar.textContent = `Verified: ${voiceSamples.length}/3`;
+    progressBar.className = voiceSamples.length >= 3 
+        ? 'progress-bar bg-success' 
+        : 'progress-bar bg-primary';
 }
 
 function stopVoiceRecording() {
@@ -382,50 +537,7 @@ function stopVoiceRecording() {
     }
     document.getElementById('recordVoiceBtn').disabled = voiceSamples.length >= 3;
     document.getElementById('stopVoiceBtn').disabled = true;
-    
-    // Show verify button if we have samples
-    if (voiceSamples.length > 0) {
-        document.getElementById('verifyAudioBtn').style.display = 'block';
-    }
-}
-
-async function verifyLastAudio() {
-    if (voiceSamples.length === 0) return;
-    
-    const btn = document.getElementById('verifyAudioBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Transcribing...';
-    
-    try {
-        const response = await fetch('/api/transcribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ audio: voiceSamples[voiceSamples.length - 1] })
-        });
-        
-        const data = await response.json();
-        const resultDiv = document.getElementById('transcriptionResult');
-        
-        if (data.success && data.text) {
-            resultDiv.innerHTML = `
-                <div class="alert alert-success py-2">
-                    <small><strong>System heard:</strong> "${data.text}"</small>
-                </div>`;
-        } else {
-            resultDiv.innerHTML = `
-                <div class="alert alert-warning py-2">
-                    <small>Could not transcribe audio. Try speaking more clearly.</small>
-                </div>`;
-        }
-    } catch (err) {
-        document.getElementById('transcriptionResult').innerHTML = `
-            <div class="alert alert-danger py-2">
-                <small>Transcription error: ${err.message}</small>
-            </div>`;
-    }
-    
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-check-double me-2"></i>Verify Last Recording';
+    document.getElementById('recordingStatus').style.display = 'none';
 }
 
 function deleteVoiceSample(index) {
@@ -453,7 +565,10 @@ function rebuildVoiceList() {
         div.className = 'audio-item d-flex justify-content-between align-items-center';
         div.id = `voice-sample-${sampleIndex}`;
         div.innerHTML = `
-            <span><i class="fas fa-check-circle text-success me-2"></i>Sample ${sampleIndex}</span>
+            <span>
+                <i class="fas fa-check-circle text-success me-2"></i>
+                Sample ${sampleIndex} <span class="badge bg-success ms-1">Verified</span>
+            </span>
             <button class="btn btn-sm btn-outline-danger" onclick="deleteVoiceSample(${sampleIndex})">
                 <i class="fas fa-trash"></i>
             </button>
@@ -466,8 +581,85 @@ function rebuildVoiceList() {
     document.getElementById('recordVoiceBtn').disabled = voiceSamples.length >= 3;
     document.getElementById('enrollBtn').disabled = voiceSamples.length < 3;
     document.getElementById('deleteAllVoicesBtn').style.display = voiceSamples.length > 0 ? 'inline-block' : 'none';
-    document.getElementById('verifyAudioBtn').style.display = voiceSamples.length > 0 ? 'block' : 'none';
+    
+    // Update progress bar
+    updateVerifyProgress();
 }
+
+// ========== PASSPHRASE VERIFICATION IN STEP 1 ==========
+
+async function recordPassphraseVerification() {
+    const passphrase = document.getElementById('passphrase').value;
+    if (!passphrase) {
+        alert('Please type your passphrase first');
+        return;
+    }
+    
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        passphraseRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        passphraseChunks = [];
+        
+        passphraseRecorder.ondataavailable = e => passphraseChunks.push(e.data);
+        passphraseRecorder.onstop = async () => {
+            const blob = new Blob(passphraseChunks, { type: 'audio/webm' });
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const audioData = reader.result;
+                
+                // Show verifying status
+                document.getElementById('passphraseVerifyStatus').innerHTML = `
+                    <div class="text-center"><i class="fas fa-spinner fa-spin"></i> Verifying...</div>`;
+                
+                // Verify passphrase match
+                const verified = await verifyPassphraseMatch(audioData, passphrase);
+                
+                if (verified.success && verified.matched) {
+                    passphraseVerified = true;
+                    document.getElementById('passphraseVerifyStatus').innerHTML = '';
+                    document.getElementById('passphraseMatchResult').style.display = 'block';
+                    document.getElementById('passphraseMatchResult').innerHTML = `
+                        <div class="alert alert-success py-2 mb-0">
+                            <i class="fas fa-check-circle me-2"></i>
+                            <strong>Passphrase verified!</strong> Heard: "${verified.transcribed}" (${verified.similarity}% match)
+                        </div>`;
+                } else {
+                    const errorMsg = verified.transcribed 
+                        ? `Heard: "${verified.transcribed}" (${verified.similarity}% match)` 
+                        : 'Could not understand the audio';
+                    
+                    document.getElementById('passphraseVerifyStatus').innerHTML = `
+                        <div class="alert alert-warning py-2">
+                            <small><i class="fas fa-exclamation-triangle me-1"></i>${errorMsg}</small>
+                            <br><small class="text-muted">Try speaking more clearly.</small>
+                        </div>`;
+                }
+            };
+            reader.readAsDataURL(blob);
+        };
+        
+        passphraseRecorder.start();
+        document.getElementById('verifyPassphraseBtn').disabled = true;
+        document.getElementById('verifyPassphraseBtn').innerHTML = '<i class="fas fa-circle text-danger fa-beat me-2"></i>Recording...';
+        document.getElementById('stopPassphraseBtn').disabled = false;
+        document.getElementById('passphraseVerifyStatus').innerHTML = '';
+        
+    } catch (err) {
+        alert('Microphone error: ' + err.message);
+    }
+}
+
+function stopPassphraseVerification() {
+    if (passphraseRecorder && passphraseRecorder.state !== 'inactive') {
+        passphraseRecorder.stop();
+        passphraseRecorder.stream.getTracks().forEach(t => t.stop());
+    }
+    document.getElementById('verifyPassphraseBtn').disabled = false;
+    document.getElementById('verifyPassphraseBtn').innerHTML = '<i class="fas fa-microphone me-2"></i>Record & Verify';
+    document.getElementById('stopPassphraseBtn').disabled = true;
+}
+
+// ========== ENROLLMENT SUBMISSION ==========
 
 async function submitEnrollment() {
     const btn = document.getElementById('enrollBtn');

@@ -164,13 +164,49 @@ def api_transcribe():
         audio_file = request.files['audio']
         audio_bytes = audio_file.read()
     
-    text, confidence = speech_model.transcribe(audio_bytes=audio_bytes)
+    text, confidence, detected_lang = speech_model.transcribe(audio_bytes=audio_bytes)
     
     return jsonify({
         'success': True,
         'text': text,
-        'confidence': confidence
+        'confidence': confidence,
+        'language': detected_lang
     })
+
+
+@app.route('/api/verify_passphrase', methods=['POST'])
+def api_verify_passphrase():
+    """Verify that spoken audio matches the expected passphrase text."""
+    data = request.get_json()
+    audio_b64 = data.get('audio')
+    expected_text = data.get('expected_text', '')
+    threshold = data.get('threshold', 0.6)  # Lower threshold for multi-language
+    
+    if not audio_b64:
+        return jsonify({'success': False, 'error': 'No audio provided'}), 400
+    
+    if not expected_text:
+        return jsonify({'success': False, 'error': 'No expected text provided'}), 400
+    
+    try:
+        audio_bytes = base64.b64decode(audio_b64.split(',')[1] if ',' in audio_b64 else audio_b64)
+        
+        matched, similarity, transcribed, message = speech_model.verify_passphrase(
+            audio_bytes=audio_bytes,
+            expected_text=expected_text,
+            threshold=threshold
+        )
+        
+        return jsonify({
+            'success': True,
+            'matched': matched,
+            'similarity': round(similarity * 100, 1),
+            'transcribed': transcribed,
+            'expected': expected_text,
+            'message': message
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/quality/face', methods=['POST'])
@@ -674,8 +710,8 @@ def api_system_status():
         'success': True,
         'status': 'online',
         'models': {
-            'face': len(face_model.user_embeddings) > 0 or True,
-            'speaker': len(speaker_model.user_embeddings) > 0 or True,
+            'face': face_model.face_cascade is not None,
+            'speaker': True,
             'speech': speech_model.is_available(),
             'gesture': gesture_model.is_available()
         },

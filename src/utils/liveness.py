@@ -205,7 +205,7 @@ class VoiceAntiSpoof:
         # Estimate SNR (simplified)
         noise_floor = np.percentile(np.abs(audio), 10)
         signal_peak = np.percentile(np.abs(audio), 90)
-        snr = 20 * np.log10(signal_peak / (noise_floor + 1e-10))
+        snr = 20 * np.log10((signal_peak + 1e-10) / (noise_floor + 1e-10))
         
         if snr < 10:
             issues.append("High background noise")

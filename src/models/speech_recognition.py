@@ -28,7 +28,8 @@ class SpeechRecognitionModel:
     def __init__(self, config: dict = None):
         self.config = config or {}
         self.model_size = self.config.get('model', 'tiny')
-        self.language = self.config.get('language', 'en')
+        # Use None for auto-detect, or specific language code
+        self.language = self.config.get('language', None)  # Auto-detect by default
         self.model = None
         
         self._load_model()
@@ -47,48 +48,104 @@ class SpeechRecognitionModel:
             print(f"[SpeechModel] Failed to load model: {e}")
             self.model = None
     
-    def transcribe(self, audio_path: str = None, audio_bytes: bytes = None) -> Tuple[str, float]:
-        """Transcribe audio to text."""
+    def transcribe(self, audio_path: str = None, audio_bytes: bytes = None) -> Tuple[str, float, str]:
+        """Transcribe audio to text. Returns (text, confidence, detected_language)."""
         if self.model is None:
-            return "", 0.0
+            return "", 0.0, "unknown"
         
         try:
             import tempfile
+            import numpy as np
             temp_path = None
+            audio_array = None
             
             # Save bytes to temp file if needed
             if audio_bytes:
                 # Check if WebM and convert
-                if audio_bytes[:4] == b'\x1a\x45\xdf\xa3' or b'webm' in audio_bytes[:50].lower():
+                if audio_bytes[:4] == b'\x1a\x45\xdf\xa3' or b'webm' in audio_bytes[:100].lower():
                     try:
                         from utils.audio import convert_webm_to_wav
-                        audio_bytes = convert_webm_to_wav(audio_bytes)
-                    except ImportError:
-                        pass
+                        converted = convert_webm_to_wav(audio_bytes)
+                        if converted:
+                            audio_bytes = converted
+                            print("[SpeechModel] WebM converted to WAV successfully")
+                        else:
+                            print("[SpeechModel] WebM conversion returned None")
+                            return "", 0.0, "unknown"
+                    except Exception as e:
+                        print(f"[SpeechModel] WebM conversion failed: {e}")
+                        return "", 0.0, "unknown"
                 
-                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
-                    f.write(audio_bytes)
-                    temp_path = f.name
-                audio_path = temp_path
+                # Load audio as numpy array using soundfile (bypasses Whisper's ffmpeg dependency)
+                try:
+                    import soundfile as sf
+                    import io
+                    audio_array, sr = sf.read(io.BytesIO(audio_bytes))
+                    
+                    # Convert to mono if stereo
+                    if len(audio_array.shape) > 1:
+                        audio_array = np.mean(audio_array, axis=1)
+                    
+                    # Resample to 16kHz if needed (Whisper expects 16kHz)
+                    if sr != 16000:
+                        # Simple resampling
+                        duration = len(audio_array) / sr
+                        new_length = int(duration * 16000)
+                        audio_array = np.interp(
+                            np.linspace(0, len(audio_array), new_length),
+                            np.arange(len(audio_array)),
+                            audio_array
+                        )
+                    
+                    # Ensure float32
+                    audio_array = audio_array.astype(np.float32)
+                    
+                    print(f"[SpeechModel] Audio loaded: {len(audio_array)} samples, {len(audio_array)/16000:.2f}s")
+                    
+                except Exception as e:
+                    print(f"[SpeechModel] Failed to load audio with soundfile: {e}")
+                    # Fallback: write to temp file
+                    suffix = '.wav' if audio_bytes[:4] == b'RIFF' else '.webm'
+                    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+                        f.write(audio_bytes)
+                        temp_path = f.name
+                    audio_path = temp_path
             
-            result = self.model.transcribe(
-                audio_path,
-                language=self.language,
-                fp16=False
-            )
+            # Transcribe
+            if audio_array is not None:
+                # Pass numpy array directly to Whisper
+                transcribe_opts = {'fp16': False}
+                if self.language:
+                    transcribe_opts['language'] = self.language
+                
+                result = self.model.transcribe(audio_array, **transcribe_opts)
+            elif audio_path:
+                # Fallback to file path
+                transcribe_opts = {'fp16': False}
+                if self.language:
+                    transcribe_opts['language'] = self.language
+                
+                result = self.model.transcribe(audio_path, **transcribe_opts)
+            else:
+                return "", 0.0, "unknown"
             
             text = result.get('text', '').strip()
             confidence = 1.0 - result.get('no_speech_prob', 0.0)
+            detected_lang = result.get('language', 'unknown')
+            
+            print(f"[SpeechModel] Transcribed: '{text}' (lang: {detected_lang}, conf: {confidence:.2f})")
             
             # Cleanup temp file
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
             
-            return text, confidence
+            return text, confidence, detected_lang
             
         except Exception as e:
             print(f"[SpeechModel] Transcription error: {e}")
-            return "", 0.0
+            import traceback
+            traceback.print_exc()
+            return "", 0.0, "unknown"
     
     def normalize_text(self, text: str) -> str:
         """Normalize text for comparison."""
@@ -101,7 +158,7 @@ class SpeechRecognitionModel:
     def verify_passphrase(self, audio_path: str = None, audio_bytes: bytes = None,
                          expected_text: str = "", threshold: float = 0.8) -> Tuple[bool, float, str, str]:
         """Verify spoken passphrase matches expected text."""
-        transcribed, confidence = self.transcribe(audio_path=audio_path, audio_bytes=audio_bytes)
+        transcribed, confidence, detected_lang = self.transcribe(audio_path=audio_path, audio_bytes=audio_bytes)
         
         if not transcribed:
             return False, 0.0, "", "Failed to transcribe audio"

@@ -16,41 +16,64 @@ try:
 except ImportError:
     SOUNDFILE_AVAILABLE = False
 
+# Try to get ffmpeg path from imageio-ffmpeg BEFORE importing pydub
+FFMPEG_PATH = None
+FFPROBE_PATH = None
+try:
+    import imageio_ffmpeg
+    FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
+    # ffprobe is in the same directory as ffmpeg
+    ffmpeg_dir = os.path.dirname(FFMPEG_PATH)
+    possible_ffprobe = os.path.join(ffmpeg_dir, 'ffprobe.exe')
+    if os.path.exists(possible_ffprobe):
+        FFPROBE_PATH = possible_ffprobe
+    else:
+        # Use ffmpeg path for ffprobe (some builds include it)
+        FFPROBE_PATH = FFMPEG_PATH
+except ImportError:
+    pass
+
+# Now import pydub and set paths
 try:
     from pydub import AudioSegment
+    from pydub.utils import which
     PYDUB_AVAILABLE = True
+    
+    # Set converter paths before any pydub operations
+    if FFMPEG_PATH:
+        AudioSegment.converter = FFMPEG_PATH
+        AudioSegment.ffmpeg = FFMPEG_PATH
+        AudioSegment.ffprobe = FFPROBE_PATH or FFMPEG_PATH
 except ImportError:
     PYDUB_AVAILABLE = False
 
 
 def convert_webm_to_wav(webm_bytes: bytes) -> Optional[bytes]:
-    """Convert WebM audio bytes to WAV format."""
+    """Convert WebM audio bytes to WAV format using ffmpeg directly."""
     
-    # Try pydub first (requires ffmpeg)
-    if PYDUB_AVAILABLE:
-        try:
-            audio = AudioSegment.from_file(io.BytesIO(webm_bytes), format="webm")
-            wav_buffer = io.BytesIO()
-            audio.export(wav_buffer, format="wav")
-            wav_buffer.seek(0)
-            return wav_buffer.read()
-        except Exception as e:
-            print(f"[AudioUtils] pydub conversion failed: {e}")
+    if not FFMPEG_PATH:
+        print("[AudioUtils] No ffmpeg path available")
+        return None
     
-    # Fallback: use ffmpeg directly
     try:
+        # Write webm to temp file
         with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as webm_file:
             webm_file.write(webm_bytes)
             webm_path = webm_file.name
         
         wav_path = webm_path.replace('.webm', '.wav')
         
-        # Run ffmpeg
+        # Run ffmpeg directly (bypass pydub)
         result = subprocess.run([
-            'ffmpeg', '-y', '-i', webm_path,
+            FFMPEG_PATH, '-y', '-i', webm_path,
             '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1',
             wav_path
         ], capture_output=True, timeout=30)
+        
+        if result.returncode != 0:
+            print(f"[AudioUtils] ffmpeg error: {result.stderr.decode()}")
+            os.remove(webm_path)
+            return None
         
         if os.path.exists(wav_path):
             with open(wav_path, 'rb') as f:
@@ -59,11 +82,12 @@ def convert_webm_to_wav(webm_bytes: bytes) -> Optional[bytes]:
             os.remove(webm_path)
             return wav_bytes
         
+        os.remove(webm_path)
+        return None
+        
     except Exception as e:
-        print(f"[AudioUtils] ffmpeg conversion failed: {e}")
-    
-    # Last resort: return original bytes and hope soundfile can handle it
-    return webm_bytes
+        print(f"[AudioUtils] Conversion failed: {e}")
+        return None
 
 
 def load_audio_bytes(audio_bytes: bytes, target_sr: int = 16000) -> Tuple[Optional[np.ndarray], int]:

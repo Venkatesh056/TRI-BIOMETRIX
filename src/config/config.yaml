@@ -50,8 +50,8 @@ models:
     n_mfcc: 13
   
   speech:
-    model: "tiny"  # "tiny", "base", "small"
-    language: "en"
+    model: "base"  # "tiny", "base", "small" - base is better for non-English
+    language: null  # null for auto-detect, or "en", "ta", "hi", etc.
   
   gesture:
     enabled: true
